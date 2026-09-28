@@ -132,7 +132,6 @@ GCalTools.updateStats = function(stats, result) {
 
 // Create or update a calendar event
 GCalTools.createOrUpdateEvent = function(calendarService, calendarId, contactName, eventDate, eventTitle, eventDescription = "") {
-  var typeOfEvent = useOriginalBirthdayCalendar ? "birthday" : "default";
   if (eventDate) {
 
     // Handle cases where the event year might be undefined
@@ -184,62 +183,8 @@ GCalTools.createOrUpdateEvent = function(calendarService, calendarId, contactNam
           return 'error';
         }
       } else {
-        // Use Calendar Service to create a 'birthday' event in the primary calendar
-        var sdd = startDate.getDate();
-        var smm = startDate.getMonth() + 1;
-        var syyyy = startDate.getFullYear();
-        var edd = endDate.getDate();
-        var emm = endDate.getMonth() + 1;
-        var eyyyy = endDate.getFullYear();
-
-        rrule = "RRULE:FREQ=YEARLY";
-        // Exception for Feb 29th!
-        if (smm === 2 && sdd === 29) rrule = "RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1";
-
-        if (!useDefaultReminders && reminders.length > 0) {
-          // Create event with custom reminders
-          var reminderOverrides = reminders.map(r => ({
-            method: r.method,
-            minutes: r.minutes
-          }));
-            
-          eventJSON = {
-            start: { date: syyyy + "-" + smm + "-" + sdd },
-            end: { date: eyyyy + "-" + emm + "-" + edd },
-            eventType: 'birthday',
-            recurrence: [rrule],
-            summary: eventTitle,
-            transparency: "transparent",
-            visibility: "private",
-            reminders: {
-              useDefault: false,
-              overrides: reminderOverrides
-            }
-          }
-        } else {
-          eventJSON = {
-            start: { date: syyyy + "-" + smm + "-" + sdd },
-            end: { date: eyyyy + "-" + emm + "-" + edd },
-            eventType: 'birthday',
-            recurrence: [rrule],
-            summary: eventTitle,
-            transparency: "transparent",
-            visibility: "private",
-            reminders: {
-              useDefault: true
-            }
-          }
-        }
-        
-        // NOTE: Don't add description to birthday event types as it will cause an API error
-        // The 'birthday' event type doesn't support descriptions in Google Calendar API
-        // Only add description for non-birthday events
-        if (eventDescription && typeOfEvent !== "birthday") {
-          eventJSON.description = eventDescription;
-        }
-        
         try {
-          event = Calendar.Events.insert(eventJSON, calendarId);
+          event = GCalTools.insertBirthdayEvent(calendarId, startDate, endDate, eventTitle);
         } catch (error) {
           Logger.log(`Error creating event for ${contactName}: ${error.message}`);
           return 'error';
@@ -253,6 +198,133 @@ GCalTools.createOrUpdateEvent = function(calendarService, calendarId, contactNam
     }
   }
   return 'error';
+};
+
+// Create a recurring 'birthday' type event in the primary calendar
+// NOTE: Don't add a description, the 'birthday' event type doesn't support it and the API will error
+GCalTools.insertBirthdayEvent = function(calendarId, startDate, endDate, eventTitle) {
+  const sdd = startDate.getDate();
+  const smm = startDate.getMonth() + 1;
+
+  // Exception for Feb 29th!
+  const rrule = (smm === 2 && sdd === 29) ? "RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1" : "RRULE:FREQ=YEARLY";
+
+  return Calendar.Events.insert({
+    start: { date: startDate.getFullYear() + "-" + smm + "-" + sdd },
+    end: { date: endDate.getFullYear() + "-" + (endDate.getMonth() + 1) + "-" + endDate.getDate() },
+    eventType: 'birthday',
+    recurrence: [rrule],
+    summary: eventTitle,
+    transparency: "transparent",
+    visibility: "private",
+    reminders: (!useDefaultReminders && reminders.length > 0) ? { useDefault: false, overrides: reminders } : { useDefault: true }
+  }, calendarId);
+};
+
+// Title + MM-DD, used to match contact dates against existing calendar events
+GCalTools.eventKey = function(title, month, day) {
+  return `${title}|${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+};
+
+/**
+ * Syncs the primary birthday calendar with contacts:
+ * creates missing events and deletes script-created events that no longer match a contact.
+ * Only events the API could have created are touched (type 'birthday', no linked contact),
+ * so your own birthday and Google's contact-synced events are left alone.
+ * Deletion is limited to dates allowed by filterMonths / filterDays.
+ */
+GCalTools.syncBirthdayCalendar = function(isDryRun) {
+  const calendarId = 'primary';
+  const stats = { created: 0, kept: 0, deleted: 0, errors: 0 };
+
+  // 1) Index existing script-created birthday events by title + date
+  // Recurring exceptions (recurringEventId) are skipped: deleting one would cancel a single occurrence
+  const existing = new Map();
+  let pageToken = null;
+  do {
+    const response = Calendar.Events.list(calendarId, { eventTypes: ['birthday'], maxResults: 2500, pageToken: pageToken });
+    (response.items || []).forEach(event => {
+      if (event.recurringEventId || event.birthdayProperties.type !== 'birthday' || event.birthdayProperties.contact) return;
+      const [, mm, dd] = event.start.date.split('-');
+      const key = GCalTools.eventKey(event.summary, mm, dd);
+      if (!existing.has(key)) existing.set(key, []);
+      existing.get(key).push(event);
+    });
+    pageToken = response.nextPageToken;
+  } while (pageToken);
+
+  // 2) Collect the events contacts require, keyed the same way (deduplicates identical title + date)
+  // No try/catch: if reading contacts fails, nothing must be deleted
+  const wanted = new Map();
+  const addWanted = (contactName, date, title) => {
+    if (!GCalTools.shouldProcessDate(date)) return;
+    const startDate = new Date(date.year || new Date().getFullYear(), date.month - 1, date.day);
+    wanted.set(GCalTools.eventKey(title, startDate.getMonth() + 1, startDate.getDate()), { contactName, startDate, title });
+  };
+  pageToken = null;
+  do {
+    const response = People.People.Connections.list('people/me', {
+      pageSize: 1000,
+      personFields: 'names,birthdays,events,memberships',
+      pageToken: pageToken
+    });
+    (response.connections || []).forEach(connection => {
+      const hasLabel = (connection.memberships || []).some(m => m.contactGroupMembership && m.contactGroupMembership.contactGroupId.includes(contactLabelID));
+      if (onlyContactLabel && !hasLabel) return;
+      const contactName = (connection.names || []).length > 0 ? connection.names[0].displayName : 'Unnamed Contact';
+
+      (connection.birthdays || []).forEach(birthday => {
+        if (birthday.date) addWanted(contactName, birthday.date, GCalTools.formatEventTitle(birthdayTitleFormat || `{name}'s Birthday`, contactName, "Birthday"));
+      });
+      if (!onlyBirthdays) {
+        (connection.events || []).forEach(event => {
+          if (event.date) addWanted(contactName, event.date, GCalTools.formatEventTitle(specialEventTitleFormat || `{name}'s {eventType}`, contactName, event.formattedType || noLabelTitle));
+        });
+      }
+    });
+    pageToken = response.nextPageToken;
+  } while (pageToken);
+
+  // 3) Keep one matching event per wanted entry, create the rest
+  wanted.forEach((item, key) => {
+    const matches = existing.get(key);
+    if (matches && matches.length > 0) {
+      matches.pop();
+      stats.kept++;
+      return;
+    }
+    if (isDryRun) {
+      Logger.log(`DRY RUN: Would create ${item.title} for ${item.contactName} on ${item.startDate.toDateString()}`);
+      stats.created++;
+      return;
+    }
+    const endDate = new Date(item.startDate);
+    endDate.setDate(endDate.getDate() + 1);
+    try {
+      GCalTools.insertBirthdayEvent(calendarId, item.startDate, endDate, item.title);
+      Logger.log(`${item.title} created for ${item.contactName} on ${item.startDate.toDateString()}`);
+      stats.created++;
+    } catch (error) {
+      Logger.log(`Error creating event for ${item.contactName}: ${error.message}`);
+      stats.errors++;
+    }
+  });
+
+  // 4) Everything left over (removed contacts, renamed titles, changed dates, duplicates) is deleted
+  existing.forEach(events => events.forEach(event => {
+    const [, mm, dd] = event.start.date.split('-');
+    if (!GCalTools.shouldProcessDate({ month: Number(mm), day: Number(dd) })) return;
+    if (isDryRun) {
+      Logger.log(`DRY RUN: Would delete ${event.summary} on ${event.start.date}`);
+    } else {
+      Calendar.Events.remove(calendarId, event.id);
+      Logger.log(`Deleted ${event.summary} on ${event.start.date}`);
+    }
+    stats.deleted++;
+  }));
+
+  Logger.log(`Summary: ${isDryRun ? "(dry run) " : ""}kept ${stats.kept}, created ${stats.created}, deleted ${stats.deleted}, errors ${stats.errors}`);
+  return stats;
 };
 
 // Function to format minutes into a more readable format

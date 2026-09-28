@@ -175,6 +175,33 @@ function dryRunDelete() {
 
 
 /**
+ * Displays what syncBirthdays would create and delete in the Execution Log without editing the calendar
+ */
+
+function dryRunSync() {
+  dryRun = true;
+  syncBirthdays();
+  dryRun = false;
+}
+
+/**
+ * Fully syncs Google's birthday calendar with your contacts (only when useOriginalBirthdayCalendar is true):
+ * creates missing events and DELETES script-created birthday events that no longer match a contact
+ * (removed contacts, changed names or dates, duplicates). Manually created birthday events are also removed
+ * unless they match a contact exactly. Your own birthday and Google's contact-synced events are not touched.
+ */
+function syncBirthdays() {
+  if (!useOriginalBirthdayCalendar) {
+    Logger.log("syncBirthdays only works with the original birthday calendar: set useOriginalBirthdayCalendar to true");
+    return;
+  }
+  if (dryRun) {
+    Logger.log("DRY RUN MODE: No events will be created or deleted, only logged");
+  }
+  return GCalTools.syncBirthdayCalendar(dryRun);
+}
+
+/**
  * Updates birthdays and special events from Google Contacts to your calendar
  */
 function updateBirthdays() {
