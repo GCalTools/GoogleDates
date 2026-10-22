@@ -71,8 +71,10 @@ In the Apps Script editor, pick a function from the dropdown next to the **Run**
 - `updateBirthdays()` — the real run. Creates events from your contacts.
 - `dryRunDelete()` — logs what events *would* be deleted.
 - `deleteEvents()` — removes birthday/special events from the configured calendar.
+- `dryRunSync()` — logs what `syncBirthdays()` *would* create and delete.
+- `syncBirthdays()` — only with `useOriginalBirthdayCalendar` set to `true`: keeps Google's Birthday calendar matched to your contacts. Creates missing birthdays and deletes script-created ones that no longer match a contact (removed contacts, changed names or dates, duplicates). Your own birthday and the birthdays Google syncs from Contacts are not touched; birthday events created by hand are removed unless they match a contact exactly. `filterMonths` / `filterDays` limit which dates it touches.
 
-The first time you run any function, Google will ask you to authorize the script. Click **Advanced > Go to (unsafe)** to grant permissions to **your own** copy of the script. The script requests read-only access to Contacts and read/write access to Calendar.
+The first time you run any function, Google will ask you to authorize the script. Click **Advanced > Go to (unsafe)** to grant permissions to **your own** copy of the script. The script requests read-only access to Contacts and Calendar, and access to view and edit events.
 
 `updateBirthdays()` is safe to re-run; it will not create duplicates.
 
