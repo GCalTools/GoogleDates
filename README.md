@@ -57,10 +57,14 @@ All settings live at the top of [Code.js](Code.js), between the `CONFIGURATION S
 
 ### Reminders
 
-- `useDefaultReminders` — `true` (recommended) uses the target calendar's default reminders, so you can change them later in Calendar settings without re-running the script.
-- `popupReminder1`, `popupReminder2`, `emailReminder1`, `emailReminder2` — only used when `useDefaultReminders` is `false`. Values are in minutes (e.g. `1440` = 1 day, `10080` = 1 week). Set to `0` to disable.
+- `popupReminder1`, `popupReminder2`, `emailReminder1`, `emailReminder2` — minutes before midnight at the start of the event day (e.g. `0` = midnight on the day, `420` = 5pm the day before, `1440` = midnight the day before). Set to `null` to disable.
+- `useDefaultReminders` — `false` (recommended) uses the reminders above. `true` leaves reminders to Google, which is affected by the bugs below.
 
-Note on reminders: when writing to the original Birthday calendar with default reminders, Google applies your main calendar's regular event notifications, not the all-day or Birthday-specific ones. Using a secondary calendar avoids this quirk.
+Google reminder bugs (tested October 2026 on both the original Birthday calendar and secondary calendars):
+
+1. Google applies the calendar's regular **Event notifications**, not its **All-day event notifications**, so a 30 minute default fires at 11:30pm the night before.
+2. That reminder is copied onto each event, so changing the calendar's notification settings later does not update existing events.
+3. Scripts cannot create a reminder later than midnight on the day (e.g. "On the same day at 9am"). Google silently changes it to midnight.
 
 ## Usage
 

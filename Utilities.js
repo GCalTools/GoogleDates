@@ -168,8 +168,9 @@ GCalTools.createOrUpdateEvent = function(calendarService, calendarId, contactNam
             { description: eventDescription }
           );
           
-          // Apply all configured reminders
-          if (!useDefaultReminders && reminders.length > 0) {
+          // Google copies the calendar's timed-event default onto the event, so clear it before applying ours
+          if (!useDefaultReminders) {
+            event.removeAllReminders();
             reminders.forEach(reminder => {
               if (reminder.method === "email") {
                 event.addEmailReminder(reminder.minutes);
@@ -217,7 +218,7 @@ GCalTools.insertBirthdayEvent = function(calendarId, startDate, endDate, eventTi
     summary: eventTitle,
     transparency: "transparent",
     visibility: "private",
-    reminders: (!useDefaultReminders && reminders.length > 0) ? { useDefault: false, overrides: reminders } : { useDefault: true }
+    reminders: useDefaultReminders ? { useDefault: true } : { useDefault: false, overrides: reminders }
   }, calendarId);
 };
 
@@ -358,14 +359,10 @@ GCalTools.showConfiguration = function() {
   Logger.log("Reminders:");
   if (useDefaultReminders) {
     Logger.log("  Using calendar default reminders");
+  } else if (reminders.length === 0) {
+    Logger.log("  No reminders configured");
   } else {
-    if (popupReminder1 > 0) Logger.log(`  Popup reminder ${GCalTools.formatMinutes(popupReminder1)} before`);
-    if (popupReminder2 > 0) Logger.log(`  Popup reminder ${GCalTools.formatMinutes(popupReminder2)} before`);
-    if (emailReminder1 > 0) Logger.log(`  Email reminder ${GCalTools.formatMinutes(emailReminder1)} before`);
-    if (emailReminder2 > 0) Logger.log(`  Email reminder ${GCalTools.formatMinutes(emailReminder2)} before`);
-    if (popupReminder1 === 0 && popupReminder2 === 0 && emailReminder1 === 0 && emailReminder2 === 0) {
-      Logger.log("  No reminders configured");
-    }
+    reminders.forEach(reminder => Logger.log(`  ${reminder.method} reminder ${GCalTools.formatMinutes(reminder.minutes)} before midnight`));
   }
   Logger.log("=== End of Configuration ===");
   

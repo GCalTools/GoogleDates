@@ -53,47 +53,48 @@ var onlyContactLabel = false;
 
 var contactLabelID = "xxxxxxxxxxxxxx";
 
-// REMINDER IN MINUTES
-// Use the following variables to configure your reminders
-// Set to 0 to disable a particular reminder type
-// Set useDefaultReminders to true to use the calendar's default reminder settings
+// REMINDERS
+// Birthdays and special events are all-day events, which start at midnight (00:00)
+// Reminders are set in minutes BEFORE midnight, so 0 = midnight on the day, 420 = 5pm the day before
+// Set a reminder to null to disable it
 
-// USE CALENDAR'S DEFAULT REMINDERS?
-// WARNING: GOOGLE REMINDERS BUGS!
-// When using Original Birthday Calendar with Default Reminders, the Main Calendar 'Event notifications' will be applied, NOT 'All Day Event notifications' as you'd expect - and also NOT the 'Birthday' calendar reminder settings!
-// When using a Secondary Calendar, that calendar's default reminders will be correctly applied
-// PREFER USING DEFAULT REMINDERS SO YOU CAN CHANGE THEM IN THE CALENDAR SETTINGS LATER.
+// USE CALENDAR'S DEFAULT REMINDERS? (NOT RECOMMENDED, see warning)
+// WARNING: GOOGLE REMINDERS BUGS! (tested October 2026, Original Birthday Calendar and Secondary Calendars)
+// 1) Google applies the calendar's 'Event notifications', NOT the 'All-day event notifications' you'd expect.
+//    e.g. a 30 minute default fires at 11:30pm the night before.
+// 2) Google copies that reminder onto each event, so changing your calendar's notification settings later will NOT update them.
+// 3) Google does not allow scripts to create a reminder later than midnight on the day, e.g. 'On the same day at 9am' is not possible.
+//    The latest reminder possible is 0 (midnight on the day).
 
-var useDefaultReminders = true;
+var useDefaultReminders = false;
 
-// EMAIL REMINDERS (set to 0 to disable)
+// EMAIL REMINDERS (set to null to disable)
 
-var emailReminder1 = 0;          // minutes before (e.g., 60 for 1 hour, 1440 for 1 day)
-var emailReminder2 = 0;          // minutes before (second email reminder, 0 to disable)
+var emailReminder1 = null;       // minutes before midnight (e.g. 0 for midnight on the day, 1440 for midnight the day before)
+var emailReminder2 = null;       // second email reminder
 
-// POPUP REMINDERS (set to 0 to disable)
+// POPUP REMINDERS (set to null to disable)
 
-var popupReminder1 = 60 * 12;    // 12 hours before (720 minutes)
-var popupReminder2 = 0;          // minutes before (second popup reminder, 0 to disable)
+var popupReminder1 = 60 * 12;    // 12 hours before = 12pm (noon) the day before
+var popupReminder2 = null;       // second popup reminder
 
-// For hours/days, here are some examples:
-// 30 minutes = 30
-// 1 hour = 60
-// 12 hours = 60 * 12 = 720
-// 1 day = 60 * 24 = 1440
-// 2 days = 60 * 24 * 2 = 2880
-// 1 week = 60 * 24 * 7 = 10080
+// Some examples:
+// 0 = midnight on the day
+// 60 * 3 = 180 = 9pm the day before
+// 60 * 7 = 420 = 5pm the day before
+// 60 * 12 = 720 = 12pm (noon) the day before
+// 60 * 24 = 1440 = midnight the day before
+// 60 * 24 * 7 = 10080 = 1 week before
 
 // *** DON'T MODIFY THIS SECTION ***
 // This creates the reminders array from your settings above
 
-var reminders = [];
-if (!useDefaultReminders) {
-  if (popupReminder1 > 0) reminders.push({ method: "popup", minutes: popupReminder1 });
-  if (popupReminder2 > 0) reminders.push({ method: "popup", minutes: popupReminder2 });
-  if (emailReminder1 > 0) reminders.push({ method: "email", minutes: emailReminder1 });
-  if (emailReminder2 > 0) reminders.push({ method: "email", minutes: emailReminder2 });
-}
+var reminders = [
+  { method: "popup", minutes: popupReminder1 },
+  { method: "popup", minutes: popupReminder2 },
+  { method: "email", minutes: emailReminder1 },
+  { method: "email", minutes: emailReminder2 }
+].filter(reminder => reminder.minutes !== null);
 // *** END OF REMINDERS CONFIGURATION ***
 
 // ADDITIONAL CONFIGURATION OPTIONS:
